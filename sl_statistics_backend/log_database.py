@@ -212,7 +212,8 @@ class LogDatabase:
             self.index_name,
             {
                 "composite": {
-                    "sources": [{"fw": {"terms": {"field": "ini_filename"}}}, {"code": {"terms": {"field": "code"}}}]
+                    "size": 1000,
+                    "sources": [{"fw": {"terms": {"field": "ini_filename"}}}, {"code": {"terms": {"field": "code"}}}],
                 }
             },
             {
