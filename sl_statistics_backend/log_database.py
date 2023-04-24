@@ -1,5 +1,5 @@
+from asyncio import gather
 from datetime import datetime
-from functools import wraps
 from typing import Any
 
 from elasticsearch import AsyncElasticsearch
@@ -8,7 +8,15 @@ from elasticsearch.helpers import async_bulk
 from sl_parser import LogFile
 from typing_extensions import Self
 
-from sl_statistics_backend.models import LogFrequencyEntry, LogOverview, MaxCountEntry, StoredLogFile, StoredLogList
+from sl_statistics_backend.models import (
+    ChartFilterData,
+    LogFrequencyEntry,
+    LogOverview,
+    MaxCountEntry,
+    StoredLogFile,
+    StoredLogList,
+    TimeChartEntry,
+)
 
 _max_timestamp = datetime(2100, 12, 31, 23, 59, 59).timestamp() * 1000
 
@@ -19,50 +27,6 @@ class LogDatabaseError(Exception):
     def __init__(self: Self, message: str, *args: object) -> None:
         super().__init__(*args)
         self.message = message
-
-
-def _ensure_index_exists(f):  # noqa: ANN001, ANN202
-    @wraps(f)
-    async def wrapper(db: "LogDatabase", *args):  # noqa: ANN002, ANN202
-        if not db._index_exists:
-            if not await db.elastic.indices.exists(index=db.index_name):
-                print("creating index")
-                await db.elastic.indices.create(
-                    index=db.index_name,
-                    mappings={
-                        "properties": {
-                            "@timestamp": {"type": "date_nanos"},
-                            "code": {"type": "keyword"},
-                            "description": {"type": "text"},
-                            "file": {"type": "keyword"},
-                            "ini_filename": {"type": "keyword"},
-                            "subunit": {"type": "long"},
-                            "timestamp": {"type": "date_nanos", "format": "iso8601"},
-                            "type_um": {"type": "keyword"},
-                            "unit": {"type": "long"},
-                            "unit_subunit_id": {"type": "long"},
-                            "value": {"type": "keyword"},
-                        }
-                    },
-                )
-            await IngestClient(db.elastic).put_pipeline(
-                id=db._pipeline_name,
-                processors=[
-                    {
-                        "date": {
-                            "field": "timestamp",
-                            "timezone": "Europe/Rome",
-                            "formats": ["ISO8601"],
-                            "output_format": "yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSSXXX",
-                        }
-                    },
-                    {"remove": {"field": ["color", "snapshot"]}},
-                ],
-            )
-            db._index_exists = True
-        return await f(db, *args)
-
-    return wrapper
 
 
 class LogDatabase:
@@ -82,6 +46,42 @@ class LogDatabase:
 
     async def close(self: Self) -> None:
         await self.elastic.close()
+
+    async def ensure_index_exists(self: Self) -> None:
+        if not await self.elastic.indices.exists(index=self.index_name):
+            print("creating index")
+            await self.elastic.indices.create(
+                index=self.index_name,
+                mappings={
+                    "properties": {
+                        "@timestamp": {"type": "date_nanos"},
+                        "code": {"type": "keyword"},
+                        "description": {"type": "text"},
+                        "file": {"type": "keyword"},
+                        "ini_filename": {"type": "keyword"},
+                        "subunit": {"type": "long"},
+                        "timestamp": {"type": "date_nanos", "format": "iso8601"},
+                        "type_um": {"type": "keyword"},
+                        "unit": {"type": "long"},
+                        "unit_subunit_id": {"type": "long"},
+                        "value": {"type": "keyword"},
+                    }
+                },
+            )
+            await IngestClient(self.elastic).put_pipeline(
+                id=self._pipeline_name,
+                processors=[
+                    {
+                        "date": {
+                            "field": "timestamp",
+                            "timezone": "Europe/Rome",
+                            "formats": ["ISO8601"],
+                            "output_format": "yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSSXXX",
+                        }
+                    },
+                    {"remove": {"field": ["color", "snapshot"]}},
+                ],
+            )
 
     async def _composite_paginate(
         self: Self, index: str, agg: dict[str, dict[str, Any]], query: dict[str, dict[str, Any]] | None = None
@@ -105,7 +105,6 @@ class LogDatabase:
         return data
 
     @property
-    @_ensure_index_exists
     async def uploaded_file_list(self: Self) -> StoredLogList:
         log_files = await self._composite_paginate(
             self.index_name,
@@ -140,7 +139,6 @@ class LogDatabase:
             ),
         )
 
-    @_ensure_index_exists
     async def _log_already_uploaded(self: Self, file_name: str) -> bool:
         res = await self.elastic.search(
             index=self.index_name,
@@ -151,14 +149,13 @@ class LogDatabase:
         )
         return res["hits"]["total"]["value"] != 0
 
-    @_ensure_index_exists
     async def upload(self: Self, log_file: LogFile) -> int:
         if await self._log_already_uploaded(log_file.filename):
             raise LogDatabaseError("Log file already uploaded!")
         entries = ((e.dict() | {"file": log_file.filename}) for e in log_file.log_entries)
         count = (
             await async_bulk(
-                self.elastic,
+                client=self.elastic,
                 actions=(
                     {
                         "_index": self.index_name,
@@ -172,7 +169,6 @@ class LogDatabase:
         await self.elastic.indices.refresh(index=self.index_name)
         return count
 
-    @_ensure_index_exists
     async def delete_log(self: Self, log: str) -> int:
         return (
             await self.elastic.delete_by_query(
@@ -180,7 +176,6 @@ class LogDatabase:
             )
         )["total"]
 
-    @_ensure_index_exists
     async def log_overview(self: Self, start: datetime, end: datetime) -> LogOverview:
         general_stats = await self.elastic.search(
             index=self.index_name,
@@ -204,7 +199,6 @@ class LogDatabase:
             entries_std_dev=general_stats["aggregations"]["ext_stats"]["std_deviation"],
         )
 
-    @_ensure_index_exists
     async def log_entries_frequency(
         self: Self, start: datetime, end: datetime, subunits: list[int]
     ) -> list[LogFrequencyEntry]:
@@ -230,4 +224,76 @@ class LogDatabase:
         return [
             LogFrequencyEntry(firmware=entry["key"]["fw"], event_code=entry["key"]["code"], count=entry["doc_count"])
             for entry in frequency_stats
+        ]
+
+    async def chart_filters(self: Self, start: datetime, end: datetime) -> ChartFilterData:
+        query = {
+            "bool": {
+                "must": [
+                    {"term": {"type_um": {"value": "BIN"}}},
+                    {"term": {"value": {"value": "ON"}}},
+                    {"range": {"@timestamp": {"gte": start.isoformat(), "lte": end.isoformat()}}},
+                ]
+            }
+        }
+        codes, firmwares, subunits = await gather(
+            self._composite_paginate(
+                self.index_name,
+                {"composite": {"size": 1000, "sources": [{"code": {"terms": {"field": "code"}}}]}},
+                query,
+            ),
+            self._composite_paginate(
+                self.index_name,
+                {"composite": {"size": 1000, "sources": [{"firmware": {"terms": {"field": "ini_filename"}}}]}},
+                query,
+            ),
+            self._composite_paginate(
+                self.index_name,
+                {"composite": {"size": 1000, "sources": [{"subunit": {"terms": {"field": "unit_subunit_id"}}}]}},
+                query,
+            ),
+        )
+        return ChartFilterData(
+            codes=[code["key"]["code"] for code in codes],
+            firmwares=[firmware["key"]["firmware"] for firmware in firmwares],
+            subunits=[subunit["key"]["subunit"] for subunit in subunits],
+        )
+
+    async def time_chart_data(
+        self: Self, start: datetime, end: datetime, subunits: list[int], codes: list[str]
+    ) -> list[TimeChartEntry]:
+        if len(subunits) == 0 or len(codes) == 0:
+            return []
+        chart_data = await self.elastic.search(
+            index=self.index_name,
+            size=0,
+            query={
+                "bool": {
+                    "must": [
+                        {"term": {"type_um": {"value": "BIN"}}},
+                        {"term": {"value": {"value": "ON"}}},
+                        {"range": {"@timestamp": {"gte": start.isoformat(), "lte": end.isoformat()}}},
+                        {"terms": {"unit_subunit_id": subunits}},
+                        {"terms": {"code": codes}},
+                    ]
+                }
+            },
+            aggs={
+                "events_over_time": {
+                    "auto_date_histogram": {"field": "@timestamp", "buckets": 120},
+                    "aggs": {"code": {"terms": {"field": "code", "size": len(codes)}}},
+                }
+            },
+        )
+        if chart_data["hits"]["total"]["value"] == 0:
+            return []
+        return [
+            (
+                {
+                    "timestamp": a["key_as_string"],
+                }
+                | {code: "0" for code in codes}
+                | {b["key"]: b["doc_count"] for b in a["code"]["buckets"]}
+            )
+            for a in chart_data["aggregations"]["events_over_time"]["buckets"]
         ]

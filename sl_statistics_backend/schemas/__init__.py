@@ -5,3 +5,5 @@ from .logfrequency import LogFrequency  # noqa: F401
 from .logfrequencyparams import LogFrequencyParams  # noqa: F401
 from .logoverviewparams import LogOverviewParams  # noqa: F401
 from .logupload import LogUpload  # noqa: F401
+from .timechart import TimeChart  # noqa: F401
+from .timechartparams import TimeChartParams  # noqa: F401
