@@ -262,8 +262,6 @@ class LogDatabase:
     async def time_chart_data(
         self: Self, start: datetime, end: datetime, subunits: list[int], codes: list[str]
     ) -> list[TimeChartEntry]:
-        if len(subunits) == 0 or len(codes) == 0:
-            return []
         chart_data = await self.elastic.search(
             index=self.index_name,
             size=0,
@@ -273,15 +271,23 @@ class LogDatabase:
                         {"term": {"type_um": {"value": "BIN"}}},
                         {"term": {"value": {"value": "ON"}}},
                         {"range": {"@timestamp": {"gte": start.isoformat(), "lte": end.isoformat()}}},
-                        {"terms": {"unit_subunit_id": subunits}},
-                        {"terms": {"code": codes}},
+                        {"terms": {"unit_subunit_id": subunits}}
                     ]
                 }
             },
             aggs={
                 "events_over_time": {
                     "auto_date_histogram": {"field": "@timestamp", "buckets": 120},
-                    "aggs": {"code": {"terms": {"field": "code", "size": len(codes)}}},
+                    "aggs": {
+                        "filtered": {
+                            # `or 1` is needed to prevent Elastic complaining about failed query parsing in
+                            # case `codes` is empty (0 isn't a valid size)
+                            "aggs": {"code": {"terms": {"field": "code", "size": len(codes) or 1}}},
+                            "filter": {
+                                "terms": {"code": codes}
+                            },
+                        },
+                    },
                 }
             },
         )
@@ -291,9 +297,10 @@ class LogDatabase:
             (
                 {
                     "timestamp": a["key_as_string"],
+                    "total": a["doc_count"],
                 }
                 | {code: "0" for code in codes}
-                | {b["key"]: b["doc_count"] for b in a["code"]["buckets"]}
+                | {b["key"]: b["doc_count"] for b in a["filtered"]["code"]["buckets"]}
             )
             for a in chart_data["aggregations"]["events_over_time"]["buckets"]
         ]
