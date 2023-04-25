@@ -31,8 +31,7 @@ log_db = LogDatabase(str(config.ELASTICSEARCH_URL))
 
 
 @spec.validate(
-    form=LogUpload,
-    resp=SpectreeResponse(HTTP_200=CountResponse, HTTP_400=ErrorResponse),
+    form=LogUpload, resp=SpectreeResponse(HTTP_200=CountResponse, HTTP_400=ErrorResponse), tags=["Log file management"]
 )
 async def upload_log(request: Request) -> Response:
     form = LogUpload(**(await request.form()))  # type: ignore
@@ -58,7 +57,7 @@ async def upload_log(request: Request) -> Response:
         )
 
 
-@spec.validate(resp=SpectreeResponse(HTTP_200=StoredLogList))
+@spec.validate(resp=SpectreeResponse(HTTP_200=StoredLogList), tags=["Log file management"])
 async def list_logs(request: Request) -> Response:
     return Response(
         (await log_db.uploaded_file_list).json(),
@@ -66,14 +65,14 @@ async def list_logs(request: Request) -> Response:
     )
 
 
-@spec.validate(json=LogDelete, resp=SpectreeResponse(HTTP_200=CountResponse))
+@spec.validate(json=LogDelete, resp=SpectreeResponse(HTTP_200=CountResponse), tags=["Log file management"])
 async def delete_log(request: Request) -> Response:
     data = LogDelete(**await request.json())
     deleted_entries = await log_db.delete_log(data.log)
     return JSONResponse({"count": deleted_entries})
 
 
-@spec.validate(query=LogOverviewParams, resp=SpectreeResponse(HTTP_200=LogOverview))
+@spec.validate(query=LogOverviewParams, resp=SpectreeResponse(HTTP_200=LogOverview), tags=["Log aggregation analysis"])
 async def selected_logs_overview(request: Request) -> Response:
     params = LogOverviewParams(**request.query_params)  # type: ignore
     data = await log_db.log_overview(params.start, params.end)
@@ -83,24 +82,26 @@ async def selected_logs_overview(request: Request) -> Response:
     )
 
 
-@spec.validate(json=LogFrequencyParams, resp=SpectreeResponse(HTTP_200=LogFrequency))
+@spec.validate(json=LogFrequencyParams, resp=SpectreeResponse(HTTP_200=LogFrequency), tags=["Log aggregation analysis"])
 async def log_frequency(request: Request) -> Response:
     params = LogFrequencyParams(**await request.json())
     data = await log_db.log_entries_frequency(params.start, params.end, params.selected_subunits)
     return JSONResponse(LogFrequency(entries=data).dict())
 
 
-@spec.validate(json=TimeChartParams, resp=SpectreeResponse(HTTP_200=TimeChart))
+@spec.validate(json=TimeChartParams, resp=SpectreeResponse(HTTP_200=TimeChart), tags=["Charts"])
 async def time_chart(request: Request) -> Response:
     params = TimeChartParams(**await request.json())
     data = await log_db.time_chart_data(params.start, params.end, params.selected_subunits, params.selected_codes)
     return JSONResponse(TimeChart(bars=data).dict())
 
-@spec.validate(query=LogOverviewParams, resp=SpectreeResponse(HTTP_200=ChartFilterData))
+
+@spec.validate(query=LogOverviewParams, resp=SpectreeResponse(HTTP_200=ChartFilterData), tags=["Charts"])
 async def chart_filters(request: Request) -> Response:
     params = LogOverviewParams(**request.query_params)  # type: ignore
     data = await log_db.chart_filters(params.start, params.end)
     return JSONResponse(data.dict())
+
 
 @contextlib.asynccontextmanager
 async def app_lifespan(app: Starlette) -> AsyncGenerator:
@@ -121,10 +122,13 @@ app = Starlette(
                 Route("/overview", selected_logs_overview),
                 # routes below should theoretically use GET, but the args don't fit in qs
                 Route("/frequency", log_frequency, methods=["POST"]),
-                Mount("/charts", routes=[
-                    Route("/filters", chart_filters),
-                    Route("/time", time_chart, methods=["POST"])
-                ]),
+                Mount(
+                    "/charts",
+                    routes=[
+                        Route("/filters", chart_filters),
+                        Route("/time", time_chart, methods=["POST"]),
+                    ],
+                ),
             ],
         ),
     ],

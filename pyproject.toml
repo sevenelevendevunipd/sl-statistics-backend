@@ -34,7 +34,10 @@ target-version = ['py310']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=sl_statistics_backend --cov-report xml:coverage.xml"
+addopts = "--cov=sl_statistics_backend --cov-report xml:coverage.xml --cov-report term-missing"
+
+[tool.coverage.run]
+omit = ["*/__main__.py"]
 
 [build-system]
 requires = ["poetry-core"]

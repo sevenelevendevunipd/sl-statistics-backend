@@ -36,10 +36,7 @@ class LogDatabase:
     _index_exists: bool
 
     def __init__(self: Self, elastic_url: str, index_name: str = "smartlog") -> None:
-        self.elastic = AsyncElasticsearch(
-            elastic_url,
-            verify_certs=False,
-        )
+        self.elastic = AsyncElasticsearch(elastic_url, verify_certs=False, ssl_show_warn=False)
         self.index_name = index_name
         self._pipeline_name = index_name + "-pipeline"
         self._index_exists = False
@@ -86,12 +83,7 @@ class LogDatabase:
     async def _composite_paginate(
         self: Self, index: str, agg: dict[str, dict[str, Any]], query: dict[str, dict[str, Any]] | None = None
     ) -> list[Any]:
-        response = await self.elastic.search(
-            index=index,
-            size=0,
-            query=query,
-            aggs={"agg": agg},
-        )
+        response = await self.elastic.search(index=index, size=0, query=query, aggs={"agg": agg})
         data = response["aggregations"]["agg"]["buckets"]
         while "after_key" in response["aggregations"]["agg"]:
             agg["composite"]["after"] = response["aggregations"]["agg"]["after_key"]
@@ -157,12 +149,7 @@ class LogDatabase:
             await async_bulk(
                 client=self.elastic,
                 actions=(
-                    {
-                        "_index": self.index_name,
-                        "_source": entry,
-                        "pipeline": self._pipeline_name,
-                    }
-                    for entry in entries
+                    {"_index": self.index_name, "_source": entry, "pipeline": self._pipeline_name} for entry in entries
                 ),
             )
         )[0]
@@ -271,7 +258,7 @@ class LogDatabase:
                         {"term": {"type_um": {"value": "BIN"}}},
                         {"term": {"value": {"value": "ON"}}},
                         {"range": {"@timestamp": {"gte": start.isoformat(), "lte": end.isoformat()}}},
-                        {"terms": {"unit_subunit_id": subunits}}
+                        {"terms": {"unit_subunit_id": subunits}},
                     ]
                 }
             },
@@ -283,9 +270,7 @@ class LogDatabase:
                             # `or 1` is needed to prevent Elastic complaining about failed query parsing in
                             # case `codes` is empty (0 isn't a valid size)
                             "aggs": {"code": {"terms": {"field": "code", "size": len(codes) or 1}}},
-                            "filter": {
-                                "terms": {"code": codes}
-                            },
+                            "filter": {"terms": {"code": codes}},
                         },
                     },
                 }
@@ -293,13 +278,11 @@ class LogDatabase:
         )
         if chart_data["hits"]["total"]["value"] == 0:
             return []
+        default_zero = {code: "0" for code in codes}
         return [
             (
-                {
-                    "timestamp": a["key_as_string"],
-                    "total": a["doc_count"],
-                }
-                | {code: "0" for code in codes}
+                {"timestamp": a["key_as_string"], "total": a["doc_count"]}
+                | default_zero
                 | {b["key"]: b["doc_count"] for b in a["filtered"]["code"]["buckets"]}
             )
             for a in chart_data["aggregations"]["events_over_time"]["buckets"]
