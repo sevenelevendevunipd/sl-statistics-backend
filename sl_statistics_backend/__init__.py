@@ -17,12 +17,13 @@ from .models import ChartFilterData, LogOverview, StoredLogList
 from .schemas import (
     CountResponse,
     ErrorResponse,
+    FirmwareChartParams,
+    Histogram,
     LogDelete,
     LogFrequency,
     LogFrequencyParams,
     LogOverviewParams,
     LogUpload,
-    TimeChart,
     TimeChartParams,
 )
 
@@ -89,11 +90,18 @@ async def log_frequency(request: Request) -> Response:
     return JSONResponse(LogFrequency(entries=data).dict())
 
 
-@spec.validate(json=TimeChartParams, resp=SpectreeResponse(HTTP_200=TimeChart), tags=["Charts"])
+@spec.validate(json=TimeChartParams, resp=SpectreeResponse(HTTP_200=Histogram), tags=["Charts"])
 async def time_chart(request: Request) -> Response:
     params = TimeChartParams(**await request.json())
     data = await log_db.time_chart_data(params.start, params.end, params.selected_subunits, params.selected_codes)
-    return JSONResponse(TimeChart(bars=data).dict())
+    return JSONResponse(Histogram(bars=data).dict())
+
+
+@spec.validate(json=FirmwareChartParams, resp=SpectreeResponse(HTTP_200=Histogram), tags=["Charts"])
+async def firmware_chart(request: Request) -> Response:
+    params = FirmwareChartParams(**await request.json())
+    data = await log_db.firmware_chart_data(params.start, params.end, params.selected_firmwares, params.selected_codes)
+    return JSONResponse(Histogram(bars=data).dict())
 
 
 @spec.validate(query=LogOverviewParams, resp=SpectreeResponse(HTTP_200=ChartFilterData), tags=["Charts"])
@@ -127,6 +135,7 @@ app = Starlette(
                     routes=[
                         Route("/filters", chart_filters),
                         Route("/time", time_chart, methods=["POST"]),
+                        Route("/firmware", firmware_chart, methods=["POST"]),
                     ],
                 ),
             ],

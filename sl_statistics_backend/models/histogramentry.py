@@ -1,0 +1,1 @@
+HistogramEntry = dict[str, str]

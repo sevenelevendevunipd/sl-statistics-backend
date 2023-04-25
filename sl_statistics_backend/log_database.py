@@ -10,12 +10,12 @@ from typing_extensions import Self
 
 from sl_statistics_backend.models import (
     ChartFilterData,
+    HistogramEntry,
     LogFrequencyEntry,
     LogOverview,
     MaxCountEntry,
     StoredLogFile,
     StoredLogList,
-    TimeChartEntry,
 )
 
 _max_timestamp = datetime(2100, 12, 31, 23, 59, 59).timestamp() * 1000
@@ -248,7 +248,7 @@ class LogDatabase:
 
     async def time_chart_data(
         self: Self, start: datetime, end: datetime, subunits: list[int], codes: list[str]
-    ) -> list[TimeChartEntry]:
+    ) -> list[HistogramEntry]:
         chart_data = await self.elastic.search(
             index=self.index_name,
             size=0,
@@ -281,9 +281,50 @@ class LogDatabase:
         default_zero = {code: "0" for code in codes}
         return [
             (
-                {"timestamp": a["key_as_string"], "total": a["doc_count"]}
+                {"timestamp": bucket["key_as_string"], "total": bucket["doc_count"]}
                 | default_zero
-                | {b["key"]: b["doc_count"] for b in a["filtered"]["code"]["buckets"]}
+                | {code["key"]: code["doc_count"] for code in bucket["filtered"]["code"]["buckets"]}
             )
-            for a in chart_data["aggregations"]["events_over_time"]["buckets"]
+            for bucket in chart_data["aggregations"]["events_over_time"]["buckets"]
+        ]
+
+    async def firmware_chart_data(
+        self: Self, start: datetime, end: datetime, firmwares: list[str], codes: list[str]
+    ) -> list[HistogramEntry]:
+        chart_data = await self._composite_paginate(
+            self.index_name,
+            {
+                "composite": {
+                    "size": 1000,
+                    "sources": [{"firmware": {"terms": {"field": "ini_filename"}}}],
+                },
+                "aggs": {
+                    "filtered": {
+                        # `or 1` is needed to prevent Elastic complaining about failed query parsing in
+                        # case `codes` is empty (0 isn't a valid size)
+                        "aggs": {"code": {"terms": {"field": "code", "size": len(codes) or 1}}},
+                        "filter": {"terms": {"code": codes}},
+                    },
+                },
+            },
+            {
+                "bool": {
+                    "must": [
+                        {"term": {"type_um": {"value": "BIN"}}},
+                        {"term": {"value": {"value": "ON"}}},
+                        {"range": {"@timestamp": {"gte": start.isoformat(), "lte": end.isoformat()}}},
+                        {"terms": {"ini_filename": firmwares}},
+                    ]
+                }
+            },
+        )
+
+        default_zero = {code: "0" for code in codes}
+        return [
+            (
+                {"firmware": bucket["key"]["firmware"], "total": bucket["doc_count"]}
+                | default_zero
+                | {code["key"]: code["doc_count"] for code in bucket["filtered"]["code"]["buckets"]}
+            )
+            for bucket in chart_data
         ]

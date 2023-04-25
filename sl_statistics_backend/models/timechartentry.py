@@ -1,1 +1,0 @@
-TimeChartEntry = dict[str, str]
