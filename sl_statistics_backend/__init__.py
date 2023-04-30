@@ -1,6 +1,7 @@
 import contextlib
 from collections.abc import AsyncGenerator
 
+from elasticsearch import AsyncElasticsearch
 from sl_parser import LogFile
 from spectree import Response as SpectreeResponse
 from spectree import SpecTree
@@ -28,7 +29,8 @@ from .schemas import (
 )
 
 spec = SpecTree("starlette")
-log_db = LogDatabase(str(config.ELASTICSEARCH_URL))
+elastic = AsyncElasticsearch(str(config.ELASTICSEARCH_URL), verify_certs=False, ssl_show_warn=False)
+log_db = LogDatabase(elastic)
 
 
 @spec.validate(

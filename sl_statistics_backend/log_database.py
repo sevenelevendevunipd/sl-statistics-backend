@@ -35,8 +35,8 @@ class LogDatabase:
     _pipeline_name: str
     _index_exists: bool
 
-    def __init__(self: Self, elastic_url: str, index_name: str = "smartlog") -> None:
-        self.elastic = AsyncElasticsearch(elastic_url, verify_certs=False, ssl_show_warn=False)
+    def __init__(self: Self, elastic: AsyncElasticsearch, index_name: str = "smartlog") -> None:
+        self.elastic = elastic
         self.index_name = index_name
         self._pipeline_name = index_name + "-pipeline"
         self._index_exists = False
