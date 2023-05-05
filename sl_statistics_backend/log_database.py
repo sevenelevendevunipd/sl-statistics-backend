@@ -1,4 +1,5 @@
 from asyncio import gather
+from collections.abc import AsyncIterable, Iterable
 from datetime import datetime
 from typing import Any
 
@@ -141,18 +142,14 @@ class LogDatabase:
         )
         return res["hits"]["total"]["value"] != 0
 
+    async def _call_async_bulk(self: Self, actions: Iterable[Any] | AsyncIterable[Any]) -> int:
+        return await async_bulk(client=self.elastic, actions=actions)
+
     async def upload(self: Self, log_file: LogFile) -> int:
         if await self._log_already_uploaded(log_file.filename):
             raise LogDatabaseError("Log file already uploaded!")
         entries = ((e.dict() | {"file": log_file.filename}) for e in log_file.log_entries)
-        count = (
-            await async_bulk(
-                client=self.elastic,
-                actions=(
-                    {"_index": self.index_name, "_source": entry, "pipeline": self._pipeline_name} for entry in entries
-                ),
-            )
-        )[0]
+        count = (await self._call_async_bulk({"_index": self.index_name, "_source": entry, "pipeline": self._pipeline_name} for entry in entries))[0]
         await self.elastic.indices.refresh(index=self.index_name)
         return count
 
