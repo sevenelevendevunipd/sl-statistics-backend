@@ -14,7 +14,11 @@ from sl_parser import LogFile
 
 from sl_statistics_backend.log_database import LogDatabase, LogDatabaseError
 from sl_statistics_backend.models import (
+    ChartFilterData,
+    HistogramEntry,
+    LogFrequencyEntry,
     LogOverview,
+    MaxCountEntry,
     StoredLogFile,
     StoredLogList,
 )
@@ -82,7 +86,6 @@ async def test_uploaded_file_list(log_database: LogDatabase) -> None:
 
     # Test getting the list of uploaded log files 
     result = await log_database.uploaded_file_list
-    print(result)
     assert result == expected_result
 
 @pytest.mark.asyncio
@@ -133,27 +136,130 @@ async def test_delete_log(log_database: LogDatabase) -> None:
     result = await log_database.delete_log("test.log")
     assert result == 1
 
-# @pytest.mark.asyncio
-# async def test_log_overview(log_database: LogDatabase) -> None:
-#     mock_elastic.search.return_value = {
-#                             "hits": {"total": {"value": 1}},
-#                             "aggregations": {
-#                                 "file": {
-#                                     "buckets": [
-#                                         {"key": "file1", 
-#                                         "doc_count": 10}, 
-#                                         {"key": "file2", 
-#                                          "doc_count": 20}
-#                                     ]},
-#                                 "max_count": {
-#                                     "value": 20, 
-#                                     "keys": ["file2"]},
-#                                 "ext_stats": {
-#                                     "sum": 30, 
-#                                     "avg": 15, 
-#                                     "std_deviation": 5}
-#                             }}
-#     start = datetime(2023, 5, 1)
-#     end = datetime(2023, 5, 5)
-#     result = await log_database.log_overview(start, end)
-#     self.assertIsInstance(result, LogOverview)
+@pytest.mark.asyncio
+async def test_log_overview(log_database: LogDatabase) -> None:
+    mock_elastic.search.side_effect = [{
+            "hits": {"total": {"value": 1}},
+            "aggregations": {
+                "file": {"buckets": [{"key": "file1", "doc_count": 100}, {"key": "file2", "doc_count": 50}]},
+                "max_count": {"value": 100, "keys": ["file1"]},
+                "ext_stats": {"count": 2, "sum": 150, "avg": 75, "std_deviation": 25},
+            },
+        }]
+
+    start = datetime(2023, 4, 1)
+    end = datetime(2023, 4, 30)
+
+    result = await log_database.log_overview(start, end)
+    assert result.total_entries == 150
+    assert result.avg_entries == 75
+    assert result.max_count_entry.filename == "file1"
+    assert result.max_count_entry.entry_count == 100
+    assert result.entries_std_dev == 25
+
+    mock_elastic.search.side_effect = [{
+            "hits": {"total": {"value": 0}},
+        }]
+
+    result = await log_database.log_overview(start, end)
+    assert result == LogOverview.empty()
+
+@pytest.mark.asyncio
+async def test_log_entries_frequency(log_database: LogDatabase) -> None:
+    expected_result = [
+            LogFrequencyEntry(firmware="firmware1", event_code="event1", count=10),
+            LogFrequencyEntry(firmware="firmware2", event_code="event2", count=20),
+            LogFrequencyEntry(firmware="firmware3", event_code="event3", count=30),
+        ]
+    mock_response = [
+            {"key": {"fw": "firmware1", "code": "event1"}, "doc_count": 10},
+            {"key": {"fw": "firmware2", "code": "event2"}, "doc_count": 20},
+            {"key": {"fw": "firmware3", "code": "event3"}, "doc_count": 30},
+        ]
+    with patch.object(log_database, '_composite_paginate', return_value=mock_response):
+        start = datetime(2023, 5, 1)
+        end = datetime(2023, 5, 5)
+        subunits = [1, 2, 3]
+        result = await log_database.log_entries_frequency(start, end, subunits)
+        assert result == expected_result
+
+@pytest.mark.asyncio
+async def test_chart_filters(log_database: LogDatabase) -> None:
+    start = datetime(2023, 5, 1)
+    end = datetime(2023, 5, 2)
+    expected_codes = ["code1", "code2", "code3"]
+    expected_firmwares = ["firmware1", "firmware2", "firmware3"]
+    expected_subunits = [2, 1, 2]
+    
+    mock_paginate = AsyncMock(side_effect=[
+        [{"key": {"code": code}} for code in expected_codes],
+        [{"key": {"firmware": firmware}} for firmware in expected_firmwares],
+        [{"key": {"subunit": subunit}} for subunit in expected_subunits],
+    ])
+
+    with patch.object(log_database, "_composite_paginate", new=mock_paginate):
+        result = await log_database.chart_filters(start, end)
+
+    assert result.codes == expected_codes
+    assert result.firmwares == expected_firmwares
+    assert result.subunits == expected_subunits
+    
+@pytest.mark.asyncio
+async def test_time_chart_data(log_database: LogDatabase) -> None:
+    expected_result = [
+            {"timestamp": "2023-05-05T00:00:00.000Z", "total": 10, "CODE1": 5, "CODE2": "0"}
+        ]
+
+    mock_elastic.search.side_effect = [{
+            "hits": {"total": {"value": 1}},
+            "aggregations": {
+                "events_over_time": {
+                    "buckets": [
+                        {
+                            "key_as_string": "2023-05-05T00:00:00.000Z",
+                            "doc_count": 10,
+                            "filtered": {
+                                "code": {"buckets": [{"key": "CODE1", "doc_count": 5}]}
+                            },
+                        }
+                    ]
+                }
+            },
+        }]
+
+    start = datetime(2023, 5, 1)
+    end = datetime(2023, 5, 7)
+    subunits = [1, 2, 3]
+    codes = ["CODE1", "CODE2"]
+
+    result = await log_database.time_chart_data(start, end, subunits, codes)
+    assert result == expected_result
+
+    mock_elastic.search.side_effect = [{
+            "hits": {"total": {"value": 0}},
+        }]
+
+    result = await log_database.time_chart_data(start, end, subunits, codes)
+    assert result == []
+
+@pytest.mark.asyncio
+async def test_firmware_chart_data(log_database: LogDatabase) -> None:
+    expected_result = [
+        {"firmware": "firmware1", "total": 100, "code1": 10, "code2": 20, "code3": 30},
+        {"firmware": "firmware2", "total": 50, "code1": 5, "code2": 15, "code3": 25}
+    ]
+
+    mock_response = [
+        {"key": {"firmware": "firmware1"}, "doc_count": 100, "filtered": {"code": {"buckets": [{"key": "code1", "doc_count": 10}, {"key": "code2", "doc_count": 20}, {"key": "code3", "doc_count": 30}]}}},
+        {"key": {"firmware": "firmware2"}, "doc_count": 50, "filtered": {"code": {"buckets": [{"key": "code1", "doc_count": 5}, {"key": "code2", "doc_count": 15}, {"key": "code3", "doc_count": 25}]}}}
+    ]
+
+    start = datetime(2022, 1, 1)
+    end = datetime(2022, 1, 31)
+    firmwares = ["firmware1", "firmware2"]
+    codes = ["code1", "code2", "code3"]
+
+    with patch.object(log_database, "_composite_paginate", return_value=mock_response):
+        result = await log_database.firmware_chart_data(start, end, firmwares, codes)
+
+    assert result == expected_result
