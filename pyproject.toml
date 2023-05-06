@@ -15,6 +15,9 @@ spectree = "^1.0.3"
 gunicorn = "^20.1.0"
 elasticsearch = {extras = ["async"], version = "^8.6.2"}
 sl-parser = "^0.2.0"
+pytest-mock = "^3.10.0"
+httpx = "^0.24.0"
+pytest-asyncio = "^0.21.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"
