@@ -1,12 +1,18 @@
 from pathlib import Path
 import pytest
+import asyncio
 from sl_statistics_backend.log_database import LogDatabase, LogDatabaseError
 from starlette.testclient import TestClient
 from sl_statistics_backend import app
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 from elasticsearch import AsyncElasticsearch
 from sl_statistics_backend.log_database import LogDatabase
 from sl_parser import LogFile
+from sl_statistics_backend.models import StoredLogFile, StoredLogList
+from datetime import datetime
+from sl_statistics_backend.__init__ import list_logs
+
+
 
 client = TestClient(app)
 
@@ -73,10 +79,33 @@ class Test_upload_log:
     #     assert response.json() == {"errors": ["Missing log file name"]}
 
 
-# def test_list_log():
-#     response = client.put("/api/log", files={"log": ("log.csv", Path(__file__).with_name("log.csv").read_text(), "text/csv")})
-#     response = client.get("/api/log_list")
-#     print(response.text)
+async def mock_uploaded_file_list(self):
+    log_files = [
+        StoredLogFile(
+            file_name="log_file_1",
+            first_entry_timestamp=datetime(2023, 5, 1, 0, 0),
+            last_entry_timestamp=datetime(2023, 5, 1, 12, 0),
+            entry_count=1000,
+        ),
+        StoredLogFile(
+            file_name="log_file_2",
+            first_entry_timestamp=datetime(2023, 5, 2, 0, 0),
+            last_entry_timestamp=datetime(2023, 5, 2, 12, 0),
+            entry_count=500,
+        ),
+    ]
+    min_timestamp = datetime(2023, 5, 1, 0, 0)
+    max_timestamp = datetime(2023, 5, 2, 12, 0)
+    return StoredLogList(log_files=log_files, min_timestamp=min_timestamp, max_timestamp=max_timestamp)
+
+
+@patch.object(LogDatabase, "uploaded_file_list", mock_uploaded_file_list, new_callable=PropertyMock)
+def test_list_logs():
+    response = client.get("/api/log_list")
+    assert response.status_code == HTTPStatus.OK
+    assert response.headers["Content-Type"] == "application/json"
+    expected_response = mock_uploaded_file_list().json()
+    assert response.json() == expected_response
 
 
 # simulating a delete in db
