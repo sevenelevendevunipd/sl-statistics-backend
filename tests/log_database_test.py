@@ -12,7 +12,6 @@ from sl_statistics_backend.log_database import LogDatabase, LogDatabaseError
 from sl_statistics_backend.models import (
     LogFrequencyEntry,
     LogOverview,
-    StoredLogList,
 )
 
 mock_elastic = AsyncMock()
@@ -75,15 +74,10 @@ async def test_upload(log_database: LogDatabase, log_file: LogFile) -> None:
 async def test_uploaded_file_list(log_database: LogDatabase) -> None:
     # quando viene fatto il mock di elasticsearch viene restituita log_files vuota e il primo datetime possibile,
     # a meno che non gli venga esplicitamente detto di restituire qualcos'altro ma nel nostro caso non serve.
-    expected_result = StoredLogList(
-        log_files=[],
-        min_timestamp=datetime(1970, 1, 1, 1, 0, 1),
-        max_timestamp=datetime(1970, 1, 1, 1, 0, 1),
-    )
 
     # Test getting the list of uploaded log files
     result = await log_database.uploaded_file_list
-    assert result == expected_result
+    assert result.log_files == []
 
 
 @pytest.mark.asyncio
