@@ -22,6 +22,8 @@ ruff = "^0.0.261"
 pytest = "^7.2.2"
 pytest-cov = "^4.0.0"
 pytest-asyncio = "^0.21.0"
+pytest-mock = "^3.10.0"
+httpx = "^0.24.0"
 
 [tool.ruff]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PTH", "PL", "TRY", "RUF", "ERA", "Q", "N", "ANN"]

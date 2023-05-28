@@ -1,0 +1,20 @@
+PC DateTime: 25.02.2022 14:23:21
+UPS DateTime: 25.02.2022 14:23:20
+INI File name :  unit.ini; Unit=0 - SubUnit=0
+INI File name :  unit.ini; Unit=1 - SubUnit=0
+INI File name :  module.ini; Unit=1 - SubUnit=1
+INI File name :  module.ini; Unit=1 - SubUnit=2
+INI File name :  module.ini; Unit=1 - SubUnit=3
+INI File name :  bypass.ini; Unit=1 - SubUnit=14
+Date ; Time ; Unit  ; SubUnit ; Code ; Description ; Value ; Type/UM ; Snapshot ; Color
+25/02/2022 ; 14:23:17.075 ; 1 ; 0 ; code1 ; code1 ; 0x0000 ; Hex ; 0 ; 0xFFADFF2F
+25/02/2022 ; 14:23:17.075 ; 1 ; 0 ; code2 ; code2 ; 112 ; [-] ; 0 ; 0xFFADFF2F
+25/02/2022 ; 14:23:17.075 ; 1 ; 0 ; code3 ; code3 ; value1 ; [-] ; 0 ; 0xFFADFF2F
+25/02/2022 ; 14:23:12.375 ; 1 ; 0 ; code4 ; code4 ; OFF ; BIN ; 0 ; 0xFFE0FFFF
+25/02/2022 ; 14:23:12.275 ; 1 ; 0 ; code5 ; [-] ; code5 ; [-] ; 0 ; 0xFFADFF2F
+25/02/2022 ; 14:23:04.557 ; 1 ; 0 ; code4 ; code4 ; ON ; BIN ; 0 ; 0xFFE0FFFF
+25/02/2022 ; 14:23:04.457 ; 1 ; 0 ; code5 ; [-] ; code5 ; [-] ; 0 ; 0xFFADFF2F
+25/02/2022 ; 14:22:45.258 ; 1 ; 0 ; code4 ; code4 ; OFF ; BIN ; 0 ; 0xFFE0FFFF
+25/02/2022 ; 14:22:45.158 ; 1 ; 0 ; code5 ; [-] ; code5 ; [-] ; 0 ; 0xFFADFF2F
+25/02/2022 ; 14:22:40.558 ; 1 ; 0 ; code5 ; [-] ; code5 ; [-] ; 0 ; 0xFFADFF2F
+25/02/2022 ; 14:22:22.259 ; 1 ; 0 ; code6 ; Reset History Log ; ON ; BIN ; 0 ; 0xFFD3D3D3
