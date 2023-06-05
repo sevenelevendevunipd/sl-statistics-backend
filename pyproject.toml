@@ -27,7 +27,7 @@ httpx = "^0.24.0"
 
 [tool.ruff]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PTH", "PL", "TRY", "RUF", "ERA", "Q", "N", "ANN"]
-ignore = ["TRY003"]
+ignore = ["TRY003", "ANN101"]
 line-length = 120
 target-version = "py310"
 
